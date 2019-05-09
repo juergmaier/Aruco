@@ -5,11 +5,11 @@ import rpyc
 
 import config
 import aruco
+import rpcSend
 
-clientList = []
+
 watchInterval = 5
 
-server = 'aruco'
 
 
 class arucoListener(rpyc.Service):
@@ -17,94 +17,88 @@ class arucoListener(rpyc.Service):
     ############################## common routines for servers
     def on_connect(self, conn):
         print(f"on_connect in server seen {conn}")
-        callerName = conn._channel.stream.sock.getpeername()
+        callerName = "unknown"
+        try:
+            callerName = conn._channel.stream.sock.getpeername()
+        except Exception as e:
+            config.log(f"on_connect, could not get peername: {e}")
         print(f"caller: {callerName}")
 
+
     def on_disconnect(self, conn):
-        callerName = conn._channel.stream.sock.getpeername()
-        print(f"{server} - on_disconnect triggered, conn: {callerName}")
+        callerName = "unknown"
+        try:
+            callerName = conn._channel.stream.sock.getpeername()
+        except Exception as e:
+            config.log(f"on_disconnect, could not get peername: {e}")
+        print(f"{config.serverName} - on_disconnect triggered, conn: {callerName}")
 
-    def exposed_requestForReplyConnection(self, ip, port, interval=5):
 
-        print(f"request for reply connection {ip}:{port}")
-        replyConn = rpyc.connect(ip, port)
+    def exposed_requestForReplyConnection(self, ip, port, messages=[], interval=5):
+
+        config.log(f"request for reply connection received from {ip}:{port}, messageList: {messages}")
+
+        try:
+            replyConn = rpyc.connect(ip, port)
+            config.log(f"reply connection established")
+        except Exception as e:
+            config.log(f"failed to open a reply connection, {e}")
+            return
 
         clientId = (ip, port)
         connectionUpdated = False
-        for c in clientList:
+        for c in config.clientList:
             if c['clientId'] == clientId:
                 print(f"update client connection")
                 c['replyConn'] = replyConn
+                c['lastMessageReceivedTime'] = time.time()
+                c['messageList'] = list(messages)
+                c['interval'] = interval
                 connectionUpdated = True
 
         if not connectionUpdated:
-            print(f"append client connection {clientId}")
-            clientList.append({'clientId': clientId, 'replyConn': replyConn, 'lastMessageReceivedTime': time.time(), 'interval': interval})
+            config.log(f"append client connection {clientId}")
+            config.clientList.append({'clientId': clientId,
+                                      'replyConn': replyConn,
+                                      'lastMessageReceivedTime': time.time(),
+                                      'messageList': list(messages),
+                                      'interval': interval})
+
+        # if server is already running send a ready message
+        if config.serverReady:
+            rpcSend.publishServerReady()
+        else:
+            rpcSend.publishLifeSignal()
 
 
-    def exposed_getLifeSignal(self, ip, port):
+    def exposed_requestLifeSignal(self, ip, port):
 
-        for c in clientList:
+        #config.log(f"life signal request received")
+        for c in config.clientList:
             if c['clientId'] == (ip, port):
                 #print(f"life signal received from  {ip}, {port}, {time.time()}")
                 c['lastMessageReceivedTime'] = time.time()
+        rpcSend.publishLifeSignal()
 
-        return True
 
     def exposed_terminate(self):
-        print(f"{server} task - terminate request received")
+        print(f"{config.serverName} task - terminate request received")
         os._exit(0)
         return True
-    ############################## common routines for servers
 
+    ############################## end common routines for servers
 
-    def exposed_findMarkers(self, camera, markerIds):
-        return aruco.lookForMarkers(camera, markerIds)
+    def exposed_findMarkers(self, camera, markerIds, camYaw):
+        config.log(f"findMarkers request received", publish=False)
+        return aruco.lookForMarkers(camera, markerIds, camYaw)
+
 
     def exposed_getEyecamImage(self):
-        #img = aruco.getEyecamImage()
-        #transferImg = img.tostring()
-        #return transferImg
-        return aruco.getEyecamImage()
+        return aruco.takeEyecamImage()
+
 
     def exposed_getCartcamImage(self):
-        #img = aruco.getCartcamImage()
-        #transferImg = img.tostring()
-        #return transferImg
-        return aruco.getCartcamImage()
+        config.log(f"getCartCamImage request received", publish=False)
+        return aruco.takeCartcamImage()
 
-    '''
-    def exposed_findDockingDetailMarker(self, markerId):
-
-        config.logf"findDockingDetailMarker received")
-        ret, _cartcamImg = cartcam.read()
-        ret, _cartcamImg = cartcam.read()
-
-        if not ret:
-            config.logf"capture image cartcam failed, imgId: {_cartcamImgId}")
-            return [False, None, None, None]
-
-        _cartcamImg = rotatedImg(_cartcamImg, 180)
-
-        cv2.imwrite("dockingDetailMarker.jpg", _cartcamImg)
-
-        # then check for marker
-        ids, corners = findMarker(_cartcamImg, False)
-
-        if ids is None:
-            config.logf"no marker in image")
-            return [False, None, None, None]
-        else:
-            config.logf"markers found: {ids}")
-
-        # sequence for docking phase 2 position approach
-        if DOCKING_DETAIL_ID in ids:
-            itemIndex = np.where(ids[0] == DOCKING_DETAIL_ID)
-            rotation, xOffset, distance = calculateCartMovesForDockingPhase2(corners[itemIndex[0][0]])
-            return [True, rotation, xOffset + MARKER_XOFFSET_CORRECTION, distance]
-
-        else:
-            config.log"docking detail marker not found")
-            return [False, None, None, None]
-    '''
 

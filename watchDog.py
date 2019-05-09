@@ -10,8 +10,7 @@ def watchDog():
     while True:
 
         # watchdog for incoming commands from clients
-        # stop cart if we do not get regular messages
-        for i, c in enumerate(rpcReceive.clientList):
+        for i, c in enumerate(config.clientList):
 
             if c['replyConn'] is not None:
 

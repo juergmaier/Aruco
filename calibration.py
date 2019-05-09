@@ -17,6 +17,7 @@ def createCharucoBoard():
     img = board.draw((200*3,200*3))
     cv2.imwrite("CharucoBoard.jpg", img)
 
+
 def takeCalibrationPictures(path, camId, rotation):
 
     arucoParams = aruco.DetectorParameters_create()
@@ -29,7 +30,7 @@ def takeCalibrationPictures(path, camId, rotation):
         cap.open()
 
     i=0
-    while i < 20:
+    while i < 30:
 
         ret, img = cap.read()
 
@@ -116,11 +117,12 @@ def createCalibrationMatrixFromImages(path):
     allIds = []
 
     images = glob.glob(path + '*.jpg')
-
+    imsize = None
     for fname in images:
         img = cv2.imread(fname)
         gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
- 
+        imsize = gray.shape
+
         res = cv2.aruco.detectMarkers(gray,arucoDict)
 
         if len(res[0])>0:
@@ -134,9 +136,6 @@ def createCalibrationMatrixFromImages(path):
         cv2.imshow('frame',gray)
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
-
-    imsize = gray.shape
-
 
     try:
         cal = cv2.aruco.calibrateCameraCharuco(allCorners,allIds,board,imsize,None,None)
